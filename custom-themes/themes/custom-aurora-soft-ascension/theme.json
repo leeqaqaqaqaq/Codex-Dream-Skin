@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 2,
+  "customPack": "artist-v2",
+  "id": "custom-aurora-soft-ascension",
+  "name": "AURORA · Soft Ascension",
+  "brandSubtitle": "SOFT ASCENSION / CODEX",
+  "tagline": "Soft ascension across rose, charcoal, and sage rooms.",
+  "appearance": "dark",
+  "palette": {
+    "accent": "#9bd7c3"
+  },
+  "colors": {
+    "background": "#0d1115",
+    "panel": "#17171dba",
+    "panelAlt": "#21232b",
+    "accent": "#9ad8c7",
+    "accentAlt": "#e9aebd",
+    "secondary": "#8ecfc0",
+    "highlight": "#eeb3b8",
+    "text": "#f5f2f1",
+    "muted": "#b6b2b3",
+    "line": "rgba(242, 194, 210, 0.25)"
+  },
+  "art": {
+    "focusX": 0.72,
+    "focusY": 0.46,
+    "safeArea": "left",
+    "taskMode": "ambient"
+  },
+  "image": "aurora-soft-home-wide.jpg",
+  "pageImages": {
+    "home": "aurora-soft-home-wide.jpg",
+    "task": "aurora-soft-task.jpg",
+    "settings": "aurora-soft-settings.jpg",
+    "utility": "aurora-soft-utility.jpg"
+  },
+  "pageArt": {
+    "home": { "focusX": 0.72, "focusY": 0.44, "accent": "#eeb3b8" },
+    "task": { "focusX": 0.77, "focusY": 0.43, "accent": "#79bfa9" },
+    "settings": { "focusX": 0.68, "focusY": 0.44, "accent": "#79bfa9" },
+    "utility": { "focusX": 0.68, "focusY": 0.45, "accent": "#8ecfc0" }
+  }
+}

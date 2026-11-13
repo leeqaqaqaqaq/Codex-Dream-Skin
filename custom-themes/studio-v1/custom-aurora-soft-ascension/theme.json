@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "id": "custom-aurora-soft-ascension",
+  "name": "AURORA · Soft Ascension",
+  "appearance": "dark",
+  "image": "background.jpg",
+  "art": {
+    "focusX": 0.72,
+    "focusY": 0.46,
+    "safeArea": "left",
+    "taskMode": "ambient"
+  },
+  "colors": {
+    "background": "#0d1115",
+    "panel": "#17171dba",
+    "panelAlt": "#21232b",
+    "accent": "#9ad8c7",
+    "accentAlt": "#e9aebd",
+    "secondary": "#8ecfc0",
+    "highlight": "#eeb3b8",
+    "text": "#f5f2f1",
+    "muted": "#b6b2b3",
+    "line": "rgba(242, 194, 210, 0.25)"
+  }
+}

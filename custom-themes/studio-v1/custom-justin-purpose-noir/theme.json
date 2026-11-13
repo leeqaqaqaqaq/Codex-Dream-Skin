@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "id": "custom-justin-purpose-noir",
+  "name": "Justin Bieber · Purpose Noir",
+  "appearance": "auto",
+  "image": "background.jpg",
+  "art": {
+    "focusX": 0.84,
+    "focusY": 0.46,
+    "safeArea": "left",
+    "taskMode": "ambient"
+  },
+  "colors": {
+    "background": "#12151f",
+    "panel": "#181d2bbd",
+    "panelAlt": "#22293b",
+    "accent": "#7397ef",
+    "accentAlt": "#9bb6f6",
+    "secondary": "#627fc9",
+    "highlight": "#a5b8f2",
+    "text": "#eef1fa",
+    "muted": "#9ea9c6",
+    "line": "rgba(115, 151, 239, 0.28)"
+  }
+}

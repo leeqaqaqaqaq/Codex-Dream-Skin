@@ -522,6 +522,45 @@ async function loadSafeCss(themeRoot) {
   }
 }
 
+const CUSTOM_PACK_MODES = new Set(["artist-v1", "artist-v2"]);
+const CUSTOM_PAGE_IMAGE_ROLES = new Set(["home", "task", "settings", "utility"]);
+
+function imageExtensionToMime(extension) {
+  const lower = String(extension || "").toLowerCase();
+  return lower === ".jpg" || lower === ".jpeg" ? "image/jpeg"
+    : lower === ".webp" ? "image/webp" : "image/png";
+}
+
+function toDataUrl(filePath, bytes) {
+  const mime = imageExtensionToMime(path.extname(filePath));
+  return `data:${mime};base64,${bytes.toString("base64")}`;
+}
+
+async function resolveContainedPageImage(realThemeDir, relativePath, label) {
+  if (typeof relativePath !== "string" || !relativePath.trim()) {
+    throw new Error(`${label} must be a non-empty relative path`);
+  }
+  const normalized = relativePath.trim();
+  if (path.isAbsolute(normalized) || normalized.includes("\0")) {
+    throw new Error(`${label} must stay inside the theme directory`);
+  }
+  const candidate = path.resolve(realThemeDir, normalized);
+  const rel = path.relative(realThemeDir, candidate);
+  if (!rel || rel.startsWith("..") || path.isAbsolute(rel)) {
+    throw new Error(`${label} cannot escape the theme directory`);
+  }
+  const realFile = await fs.realpath(candidate);
+  const realRel = path.relative(realThemeDir, realFile);
+  if (!realRel || realRel.startsWith("..") || path.isAbsolute(realRel)) {
+    throw new Error(`${label} symlink cannot escape the theme directory`);
+  }
+  const ext = path.extname(realFile).toLowerCase();
+  if (![".png", ".jpg", ".jpeg", ".webp"].includes(ext)) {
+    throw new Error(`${label} must be PNG, JPEG, or WebP`);
+  }
+  return { realFile, ext };
+}
+
 export async function loadTheme(themeDir, preferenceOptions = {}) {
   const realThemeDir = await fs.realpath(themeDir);
   const themePath = path.join(realThemeDir, "theme.json");
@@ -530,7 +569,15 @@ export async function loadTheme(themeDir, preferenceOptions = {}) {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
     throw new Error("Theme root must be an object");
   }
-  if (raw.schemaVersion !== 1) {
+  const customPack = raw.customPack === undefined ? null : String(raw.customPack).trim();
+  if (customPack !== null && !CUSTOM_PACK_MODES.has(customPack)) {
+    throw new Error(`Unsupported customPack mode: ${raw.customPack}`);
+  }
+  const expectedSchemaVersion = customPack === "artist-v2" ? 2 : 1;
+  if (raw.schemaVersion !== expectedSchemaVersion) {
+    if (customPack === "artist-v2") {
+      throw new Error("Custom artist-v2 theme must use schemaVersion 2");
+    }
     throw new Error("Theme must use schemaVersion 1");
   }
   const image = normalizedText(raw.image, "image", null, 240);
@@ -590,6 +637,49 @@ export async function loadTheme(themeDir, preferenceOptions = {}) {
     explicitColorKeys: rawColors ? colorKeys.filter((key) => Object.hasOwn(rawColors, key)) : [],
     colors,
   };
+  if (customPack) {
+    theme.schemaVersion = expectedSchemaVersion;
+    theme.customPack = customPack;
+    if (typeof raw.brandSubtitle === "string" && raw.brandSubtitle.trim()) {
+      theme.brandSubtitle = raw.brandSubtitle.trim();
+    }
+    if (raw.palette && typeof raw.palette === "object" && !Array.isArray(raw.palette)) {
+      theme.palette = {};
+      if (typeof raw.palette.accent === "string" && raw.palette.accent.trim()) {
+        theme.palette.accent = raw.palette.accent.trim();
+      }
+    }
+    if (raw.pageArt && typeof raw.pageArt === "object" && !Array.isArray(raw.pageArt)) {
+      const normalizedPageArt = {};
+      for (const [role, entry] of Object.entries(raw.pageArt)) {
+        if (!CUSTOM_PAGE_IMAGE_ROLES.has(role) || !entry || typeof entry !== "object" || Array.isArray(entry)) {
+          continue;
+        }
+        const normalizedEntry = {};
+        if (typeof entry.focusX === "number" && Number.isFinite(entry.focusX)) {
+          normalizedEntry.focusX = Math.min(1, Math.max(0, entry.focusX));
+        }
+        if (typeof entry.focusY === "number" && Number.isFinite(entry.focusY)) {
+          normalizedEntry.focusY = Math.min(1, Math.max(0, entry.focusY));
+        }
+        if (typeof entry.safeArea === "string" && entry.safeArea.trim()) {
+          normalizedEntry.safeArea = entry.safeArea.trim();
+        }
+        if (typeof entry.taskMode === "string" && entry.taskMode.trim()) {
+          normalizedEntry.taskMode = entry.taskMode.trim();
+        }
+        if (typeof entry.accent === "string" && entry.accent.trim()) {
+          normalizedEntry.accent = entry.accent.trim();
+        }
+        if (Object.keys(normalizedEntry).length > 0) {
+          normalizedPageArt[role] = normalizedEntry;
+        }
+      }
+      if (Object.keys(normalizedPageArt).length > 0) {
+        theme.pageArt = normalizedPageArt;
+      }
+    }
+  }
   const userTransparency = await readThemeTransparency(theme.id, { preferencesPath: themePreferencesPath("win32"), ...preferenceOptions });
   if (userTransparency !== undefined) theme.userTransparency = userTransparency;
   const [themeStat, imageStat, safeCss] = await Promise.all([
@@ -611,30 +701,133 @@ export async function loadTheme(themeDir, preferenceOptions = {}) {
     throw new Error("Theme image metadata is invalid or exceeds the 16384px / 50MP safety limit");
   }
   theme.artMetadata = artMetadata;
-  const fingerprint = createHash("sha256")
+
+  const pageImagePaths = {};
+  const pageArtBuffers = {};
+  const pageImageStats = [];
+  if (customPack === "artist-v2" && raw.pageImages !== undefined) {
+    if (!raw.pageImages || typeof raw.pageImages !== "object" || Array.isArray(raw.pageImages)) {
+      throw new Error("artist-v2 theme pageImages must be an object");
+    }
+    const pageArtMetadata = {};
+    for (const role of Object.keys(raw.pageImages).sort()) {
+      if (!CUSTOM_PAGE_IMAGE_ROLES.has(role)) {
+        throw new Error(`Unsupported pageImages role: ${role}`);
+      }
+      const relValue = raw.pageImages[role];
+      if (typeof relValue !== "string" || !relValue.trim()) {
+        throw new Error(`pageImages.${role} must be a non-empty relative path`);
+      }
+      const normalizedRel = relValue.trim();
+      if (path.isAbsolute(normalizedRel) || normalizedRel.includes("\0") ||
+        normalizedRel.split(/[\\/]+/).includes("..")) {
+        throw new Error(`pageImages.${role} cannot escape the theme directory`);
+      }
+      const rawExt = path.extname(normalizedRel).toLowerCase();
+      const stagedCandidate = `page-${role}${rawExt}`;
+      let resolved;
+      try {
+        resolved = await resolveContainedPageImage(realThemeDir, stagedCandidate, `pageImages.${role}`);
+      } catch (err) {
+        if (err && err.code === "ENOENT") {
+          resolved = await resolveContainedPageImage(realThemeDir, normalizedRel, `pageImages.${role}`);
+        } else {
+          throw err;
+        }
+      }
+      const pStat = await fs.stat(resolved.realFile);
+      if (!pStat.isFile() || pStat.size < 1 || pStat.size > MAX_ART_BYTES) {
+        throw new Error(`pageImages.${role} exceeds size limits or is not a file`);
+      }
+      const pBytes = await fs.readFile(resolved.realFile);
+      if (pBytes.length < 1 || pBytes.length > MAX_ART_BYTES) {
+        throw new Error(`pageImages.${role} byte length exceeds limits`);
+      }
+      const pMeta = readImageMetadata(pBytes, resolved.ext);
+      if (!pMeta) {
+        throw new Error(`pageImages.${role} metadata is invalid or exceeds the 16384px / 50MP safety limit`);
+      }
+      pageImagePaths[role] = resolved.realFile;
+      pageArtBuffers[role] = { realFile: resolved.realFile, ext: resolved.ext, bytes: pBytes, stat: pStat };
+      pageArtMetadata[role] = pMeta;
+      pageImageStats.push(`${role}=${pStat.size}:${pStat.mtimeMs}`);
+    }
+    if (Object.keys(pageArtMetadata).length > 0) {
+      theme.pageArtMetadata = pageArtMetadata;
+    }
+  }
+
+  const fingerprintHash = createHash("sha256")
     .update(themeText, "utf8")
     .update(JSON.stringify({ userTransparency: theme.userTransparency }))
     .update("\0")
     .update(imageBytes)
     .update("\0")
-    .update(safeCss?.source ?? "")
-    .digest("hex");
+    .update(safeCss?.source ?? "");
+  for (const role of Object.keys(pageArtBuffers).sort()) {
+    fingerprintHash.update("\0").update(role).update(":").update(pageArtBuffers[role].bytes);
+  }
+  const fingerprint = fingerprintHash.digest("hex");
+  const pageStampSuffix = pageImageStats.length > 0 ? `:${pageImageStats.join("|")}` : "";
   return {
     theme,
     themePath,
     imagePath: realImagePath,
     imageBytes,
+    pageImagePaths,
+    pageArtBuffers,
     safeCss: safeCss?.source ?? "",
     safeCssRuntime: safeCss?.runtimeSource ?? "",
     safeCssPath: safeCss?.path ?? null,
     safeCssStatus: safeCss ? "validated" : "none",
     fingerprint,
     sourceStamp: `${themeStat.size}:${themeStat.mtimeMs}:${imageStat.size}:${imageStat.mtimeMs}:` +
-      (safeCss ? `${safeCss.stat.size}:${safeCss.stat.mtimeMs}` : "none"),
+      (safeCss ? `${safeCss.stat.size}:${safeCss.stat.mtimeMs}` : "none") + pageStampSuffix,
   };
 }
 
 export async function loadPayload(themeDir = path.join(root, "assets"), candidateTheme = null) {
+  const loadedTheme = candidateTheme ?? await loadTheme(themeDir);
+  const coreResult = await loadCorePayload(themeDir, loadedTheme);
+  if (!loadedTheme.theme.customPack) {
+    return coreResult;
+  }
+  const [artistCss, artistOverlay] = await Promise.all([
+    fs.readFile(path.join(root, "assets", "custom-pack", "artist-skin.css"), "utf8"),
+    fs.readFile(path.join(root, "assets", "custom-pack", "artist-overlay.js"), "utf8"),
+  ]);
+  const overlayFn = artistOverlay.trim().replace(/;+\s*$/, "");
+  const pageArtDataUrls = {
+    default: toDataUrl(loadedTheme.imagePath, loadedTheme.imageBytes),
+  };
+  for (const [role, entry] of Object.entries(loadedTheme.pageArtBuffers ?? {})) {
+    pageArtDataUrls[role] = toDataUrl(entry.realFile, entry.bytes);
+  }
+  const styleRevision = createHash("sha256")
+    .update(coreResult.revision)
+    .update(artistCss)
+    .digest("hex")
+    .slice(0, 20);
+  const overlayRevision = createHash("sha256")
+    .update(styleRevision)
+    .update(overlayFn)
+    .update(JSON.stringify(pageArtDataUrls))
+    .update(JSON.stringify(loadedTheme.theme))
+    .digest("hex")
+    .slice(0, 20);
+  const coreExpr = coreResult.payload.trim().replace(/;+\s*$/, "");
+  const payload = `((coreResult) => { if (!coreResult || !coreResult.installed) return coreResult; return (${overlayFn})(coreResult, ${JSON.stringify(artistCss)}, ${JSON.stringify(pageArtDataUrls)}, ${JSON.stringify(loadedTheme.theme)}); })(${coreExpr})`;
+  new Function(payload);
+  return {
+    ...coreResult,
+    payload,
+    revision: overlayRevision,
+    styleRevision,
+    artistPack: loadedTheme.theme.customPack,
+  };
+}
+
+async function loadCorePayload(themeDir = path.join(root, "assets"), candidateTheme = null) {
   const loadedTheme = candidateTheme ?? await loadTheme(themeDir);
   const [css, template] = await Promise.all([
     fs.readFile(path.join(root, "assets", "dream-skin.css"), "utf8"),
@@ -697,16 +890,20 @@ async function fileExists(filePath) {
 }
 
 async function readThemeSourceStamp(loadedTheme) {
-  const [themeStat, imageStat, cssStat] = await Promise.all([
+  const pageEntries = Object.entries(loadedTheme.pageImagePaths ?? {})
+    .sort(([a], [b]) => a.localeCompare(b));
+  const [themeStat, imageStat, cssStat, ...pageStats] = await Promise.all([
     fs.stat(loadedTheme.themePath),
     fs.stat(loadedTheme.imagePath),
     fs.stat(path.join(path.dirname(loadedTheme.themePath), "theme.css")).catch((error) => {
       if (error.code === "ENOENT") return null;
       throw error;
     }),
+    ...pageEntries.map(([role, filePath]) => fs.stat(filePath).then((stat) => `${role}=${stat.size}:${stat.mtimeMs}`)),
   ]);
+  const pageSuffix = pageStats.length > 0 ? `:${pageStats.join("|")}` : "";
   return `${themeStat.size}:${themeStat.mtimeMs}:${imageStat.size}:${imageStat.mtimeMs}:` +
-    (cssStat ? `${cssStat.size}:${cssStat.mtimeMs}` : "none");
+    (cssStat ? `${cssStat.size}:${cssStat.mtimeMs}` : "none") + pageSuffix;
 }
 
 async function probeSession(session) {

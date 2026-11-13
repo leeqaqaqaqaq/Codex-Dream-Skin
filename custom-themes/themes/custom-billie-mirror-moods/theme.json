@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 2,
+  "customPack": "artist-v2",
+  "id": "custom-billie-mirror-moods",
+  "name": "碧梨 · Mirror Moods",
+  "brandSubtitle": "MIRROR MOODS / CODEX",
+  "tagline": "Warm graphite, emerald reflection, and amber gallery panes.",
+  "appearance": "dark",
+  "palette": {
+    "accent": "#d58b74"
+  },
+  "colors": {
+    "background": "#161110",
+    "panel": "#1f1816ba",
+    "panelAlt": "#2b211e",
+    "accent": "#d58b74",
+    "accentAlt": "#d89b72",
+    "secondary": "#76a086",
+    "highlight": "#e3a98d",
+    "text": "#f3ece4",
+    "muted": "#b8aba0",
+    "line": "rgba(213, 139, 116, 0.30)"
+  },
+  "art": {
+    "focusX": 0.76,
+    "focusY": 0.48,
+    "safeArea": "left",
+    "taskMode": "ambient"
+  },
+  "image": "billie-mirror-home.jpg",
+  "pageImages": {
+    "home": "billie-mirror-home.jpg",
+    "task": "billie-mirror-task.jpg",
+    "settings": "billie-mirror-settings.jpg",
+    "utility": "billie-mirror-settings.jpg"
+  },
+  "pageArt": {
+    "home": { "focusX": 0.76, "focusY": 0.48, "accent": "#d58b74" },
+    "task": { "focusX": 0.76, "focusY": 0.47, "accent": "#76a086" },
+    "settings": { "focusX": 0.76, "focusY": 0.46, "accent": "#d89b72" },
+    "utility": { "focusX": 0.76, "focusY": 0.46, "accent": "#d89b72" }
+  }
+}

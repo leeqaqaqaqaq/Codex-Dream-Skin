@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "customPack": "artist-v1",
+  "id": "custom-justin-purpose-noir",
+  "name": "Justin Bieber · Purpose Noir",
+  "brandSubtitle": "PURPOSE NOIR / CODEX",
+  "tagline": "Noir slate ink with cool studio cobalt highlights.",
+  "appearance": "auto",
+  "palette": {
+    "accent": "#7397ef"
+  },
+  "colors": {
+    "background": "#12151f",
+    "panel": "#181d2bbd",
+    "panelAlt": "#22293b",
+    "accent": "#7397ef",
+    "accentAlt": "#9bb6f6",
+    "secondary": "#627fc9",
+    "highlight": "#a5b8f2",
+    "text": "#eef1fa",
+    "muted": "#9ea9c6",
+    "line": "rgba(115, 151, 239, 0.28)"
+  },
+  "art": {
+    "focusX": 0.84,
+    "focusY": 0.46,
+    "safeArea": "left",
+    "taskMode": "ambient"
+  },
+  "image": "justin-purpose-noir.jpg"
+}

@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "id": "custom-billie-mirror-moods",
+  "name": "碧梨 · Mirror Moods",
+  "appearance": "dark",
+  "image": "background.jpg",
+  "art": {
+    "focusX": 0.76,
+    "focusY": 0.48,
+    "safeArea": "left",
+    "taskMode": "ambient"
+  },
+  "colors": {
+    "background": "#161110",
+    "panel": "#1f1816ba",
+    "panelAlt": "#2b211e",
+    "accent": "#d58b74",
+    "accentAlt": "#d89b72",
+    "secondary": "#76a086",
+    "highlight": "#e3a98d",
+    "text": "#f3ece4",
+    "muted": "#b8aba0",
+    "line": "rgba(213, 139, 116, 0.30)"
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "id": "custom-aurora-runaway-bloom",
+  "name": "AURORA · Runaway Bloom",
+  "appearance": "dark",
+  "image": "background.jpg",
+  "art": {
+    "focusX": 0.78,
+    "focusY": 0.43,
+    "safeArea": "left",
+    "taskMode": "ambient"
+  },
+  "colors": {
+    "background": "#120e1e",
+    "panel": "#1b152bb8",
+    "panelAlt": "#261e3b",
+    "accent": "#c6a7ff",
+    "accentAlt": "#dfc9ff",
+    "secondary": "#9a8ee8",
+    "highlight": "#e4addb",
+    "text": "#f4effa",
+    "muted": "#b4a7c8",
+    "line": "rgba(198, 167, 255, 0.28)"
+  }
+}

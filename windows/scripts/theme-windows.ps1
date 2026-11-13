@@ -582,6 +582,7 @@ function Set-DreamSkinActiveTheme {
     [AllowNull()][object]$Theme,
     [string]$Name,
     [AllowNull()][string]$SafeCssPath,
+    [AllowNull()][string]$SourceThemeDirectory = $null,
     [string]$StateRoot = (Join-Path $env:LOCALAPPDATA 'CodexDreamSkin')
   )
   $paths = Get-DreamSkinThemePaths -StateRoot $StateRoot
@@ -606,6 +607,7 @@ function Set-DreamSkinActiveTheme {
   $target = Join-Path $paths.Active $imageName
   $temporary = Join-Path $paths.Active ('.dream-tmp-' + [guid]::NewGuid().ToString('N') + $extension)
   $temporaryCss = $null
+  $stagedPageFiles = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
   try {
     if ($SafeCssPath) {
       $safeCssSource = [System.IO.Path]::GetFullPath($SafeCssPath)
@@ -626,6 +628,62 @@ function Set-DreamSkinActiveTheme {
     $Theme | Add-Member -NotePropertyName image -NotePropertyValue $imageName -Force
     if ($Name) { $Theme | Add-Member -NotePropertyName name -NotePropertyValue $Name -Force }
     $Theme = Normalize-DreamSkinThemeContract -Theme $Theme
+
+    $isArtistV2 = ($Theme.PSObject.Properties['customPack'] -and "$($Theme.customPack)" -ceq 'artist-v2' -and
+      $Theme.PSObject.Properties['pageImages'] -and $Theme.pageImages)
+    if ($isArtistV2) {
+      $pageSourceRoot = $null
+      if ($SourceThemeDirectory -and (Test-Path -LiteralPath $SourceThemeDirectory -PathType Container)) {
+        $pageSourceRoot = [System.IO.Path]::GetFullPath($SourceThemeDirectory)
+      } elseif ($Theme.PSObject.Properties['id'] -and "$($Theme.id)") {
+        $savedFallback = Join-Path $paths.Saved "$($Theme.id)"
+        if (Test-Path -LiteralPath $savedFallback -PathType Container) {
+          $pageSourceRoot = [System.IO.Path]::GetFullPath($savedFallback)
+        }
+      }
+      if (-not $pageSourceRoot) {
+        $pageSourceRoot = [System.IO.Path]::GetDirectoryName($source)
+      }
+      foreach ($prop in $Theme.pageImages.PSObject.Properties) {
+        $role = "$($prop.Name)"
+        if ($role -notin @('home', 'task', 'settings', 'utility')) { continue }
+        $relPage = "$($prop.Value)"
+        if (-not $relPage -or [System.IO.Path]::IsPathRooted($relPage)) {
+          throw "Theme pageImages.$role path must be relative."
+        }
+        $pageExt = [System.IO.Path]::GetExtension($relPage).ToLowerInvariant()
+        $stagedName = "page-$role$pageExt"
+        $pageSourcePath = [System.IO.Path]::GetFullPath((Join-Path $pageSourceRoot $stagedName))
+        if (-not (Test-Path -LiteralPath $pageSourcePath -PathType Leaf)) {
+          $pageSourcePath = [System.IO.Path]::GetFullPath((Join-Path $pageSourceRoot $relPage))
+        }
+        if (-not (Test-DreamSkinThemePathWithin -Path $pageSourcePath -Root $pageSourceRoot) -or
+          -not (Test-Path -LiteralPath $pageSourcePath -PathType Leaf)) {
+          throw "Theme pageImages.$role must remain inside its theme directory and exist."
+        }
+        Assert-DreamSkinNoReparseComponents -Path $pageSourcePath
+        Assert-DreamSkinImageFile -Path $pageSourcePath
+        $stagedTarget = Join-Path $paths.Active $stagedName
+        $stagedTemp = Join-Path $paths.Active ('.dream-tmp-' + [guid]::NewGuid().ToString('N') + $pageExt)
+        Assert-DreamSkinNoReparseComponents -Path $stagedTarget
+        Assert-DreamSkinNoReparseComponents -Path $stagedTemp
+        Copy-Item -LiteralPath $pageSourcePath -Destination $stagedTemp -Force
+        try {
+          Assert-DreamSkinNoReparseComponents -Path $stagedTemp
+          Assert-DreamSkinImageFile -Path $stagedTemp
+          Move-Item -LiteralPath $stagedTemp -Destination $stagedTarget -Force
+        } finally {
+          Remove-Item -LiteralPath $stagedTemp -Force -ErrorAction SilentlyContinue
+        }
+        $null = $stagedPageFiles.Add($stagedName)
+      }
+    }
+    foreach ($existingPageFile in Get-ChildItem -LiteralPath $paths.Active -File -Filter 'page-*' -ErrorAction SilentlyContinue) {
+      if (-not $stagedPageFiles.Contains($existingPageFile.Name)) {
+        Remove-Item -LiteralPath $existingPageFile.FullName -Force -ErrorAction SilentlyContinue
+      }
+    }
+
     $activeCss = Join-Path $paths.Active 'theme.css'
     Assert-DreamSkinNoReparseComponents -Path $activeCss
     if ($temporaryCss) {
@@ -702,6 +760,32 @@ function Save-DreamSkinCurrentTheme {
   $theme.id = $id
   $theme.name = $trimmed
   $theme.image = $imageName
+  if ($theme.PSObject.Properties['customPack'] -and "$($theme.customPack)" -ceq 'artist-v2' -and
+    $theme.PSObject.Properties['pageImages'] -and $theme.pageImages) {
+    $savedPageImages = [ordered]@{}
+    foreach ($prop in $theme.pageImages.PSObject.Properties) {
+      $role = "$($prop.Name)"
+      if ($role -notin @('home', 'task', 'settings', 'utility')) { continue }
+      $relPage = "$($prop.Value)"
+      if (-not $relPage -or [System.IO.Path]::IsPathRooted($relPage)) { continue }
+      $pageExt = [System.IO.Path]::GetExtension($relPage).ToLowerInvariant()
+      $stagedName = "page-$role$pageExt"
+      $activePageSource = [System.IO.Path]::GetFullPath((Join-Path $paths.Active $stagedName))
+      if (-not (Test-Path -LiteralPath $activePageSource -PathType Leaf)) {
+        $activePageSource = [System.IO.Path]::GetFullPath((Join-Path $paths.Active $relPage))
+      }
+      if ((Test-DreamSkinThemePathWithin -Path $activePageSource -Root $paths.Active) -and
+        (Test-Path -LiteralPath $activePageSource -PathType Leaf)) {
+        $destPagePath = Join-Path $destination $stagedName
+        Assert-DreamSkinNoReparseComponents -Path $destPagePath
+        Copy-Item -LiteralPath $activePageSource -Destination $destPagePath -Force
+        Assert-DreamSkinNoReparseComponents -Path $destPagePath
+        Assert-DreamSkinImageFile -Path $destPagePath
+        $savedPageImages[$role] = $stagedName
+      }
+    }
+    $theme | Add-Member -NotePropertyName pageImages -NotePropertyValue ([pscustomobject]$savedPageImages) -Force
+  }
   Write-DreamSkinTheme -ThemeDirectory $destination -Theme $theme
   $activeCss = Join-Path $paths.Active 'theme.css'
   if (Test-Path -LiteralPath $activeCss -PathType Leaf) {
@@ -762,6 +846,19 @@ function Test-DreamSkinThemeDirectoryHasOnlyRuntimeFiles {
   foreach ($name in @('theme.json', [System.IO.Path]::GetFileName($loaded.ImagePath),
       'theme.css', 'LICENSE.txt')) {
     $null = $allowed.Add($name)
+  }
+  if ($loaded.Theme.PSObject.Properties['customPack'] -and
+    "$($loaded.Theme.customPack)" -ceq 'artist-v2' -and
+    $loaded.Theme.PSObject.Properties['pageImages'] -and $loaded.Theme.pageImages) {
+    foreach ($prop in $loaded.Theme.pageImages.PSObject.Properties) {
+      $role = "$($prop.Name)"
+      if ($role -notin @('home', 'task', 'settings', 'utility')) { continue }
+      $relPage = "$($prop.Value)"
+      if (-not $relPage -or [System.IO.Path]::IsPathRooted($relPage)) { continue }
+      $pageExt = [System.IO.Path]::GetExtension($relPage).ToLowerInvariant()
+      $null = $allowed.Add($relPage)
+      $null = $allowed.Add("page-$role$pageExt")
+    }
   }
   foreach ($entry in Get-ChildItem -LiteralPath $loaded.Directory -Force -ErrorAction Stop) {
     Assert-DreamSkinNoReparseComponents -Path $entry.FullName
@@ -2194,7 +2291,7 @@ function Use-DreamSkinSavedTheme {
   if (-not (Test-Path -LiteralPath $safeCssPath -PathType Leaf)) { $safeCssPath = $null }
   if ($safeCssPath) { Assert-DreamSkinSafeCssFile -Path $safeCssPath }
   return Set-DreamSkinActiveTheme -ImagePath $saved.ImagePath -Theme $theme `
-    -SafeCssPath $safeCssPath -StateRoot $StateRoot
+    -SafeCssPath $safeCssPath -SourceThemeDirectory $directory -StateRoot $StateRoot
 }
 
 function Set-DreamSkinPaused {
